@@ -1,0 +1,86 @@
+/* global use, db */
+// MongoDB Playground
+// Use Ctrl+Space inside a snippet or a string literal to trigger completions.
+
+const database = 'dmbot';
+const collection = 'messages';
+
+// Create a new database.
+use(database);
+
+// Create a new collection.
+db.createCollection(collection, {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["text", "isUser", "timestamp"],
+      properties: {
+        text: {
+          bsonType: "string",
+          description: "must be a string and is required"
+        },
+        isUser: {
+          bsonType: "bool",
+          description: "must be a boolean and is required"
+        },
+        timestamp: {
+          bsonType: "date",
+          description: "must be a date and is required"
+        }
+      }
+    }
+  },
+  validationLevel: "strict",
+  validationAction: "error"
+});
+
+// Create an index on the timestamp field
+db.messages.createIndex({ timestamp: 1 });
+
+// Insert a sample document
+db.messages.insertOne({
+  text: "Hello, this is a test message.",
+  isUser: true,
+  timestamp: new Date()
+});
+
+// Verify the collection was created and the document was inserted
+print("Collection 'messages' created in database 'dmbot'.");
+print("Sample document inserted:");
+printjson(db.messages.findOne());
+
+// Create another collection for articles
+db.createCollection("articles", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["title", "content", "createdAt"],
+      properties: {
+        title: {
+          bsonType: "string",
+          description: "must be a string and is required"
+        },
+        content: {
+          bsonType: "string",
+          description: "must be a string and is required"
+        },
+        createdAt: {
+          bsonType: "date",
+          description: "must be a date and is required"
+        }
+      }
+    }
+  },
+  validationLevel: "strict",
+  validationAction: "error"
+});
+
+// Create indexes for the articles collection
+db.articles.createIndex({ title: 1 });
+db.articles.createIndex({ createdAt: -1 });
+
+print("Collection 'articles' created in database 'dmbot'.");
+
+// List all collections in the database
+print("Collections in the 'dmbot' database:");
+db.getCollectionNames().forEach(printjson);

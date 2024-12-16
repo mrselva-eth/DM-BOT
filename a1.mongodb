@@ -1,0 +1,29 @@
+/* global use, db */
+// MongoDB Playground
+// Use Ctrl+Space inside a snippet or a string literal to trigger completions.
+
+// Select the database
+use('dmbot');
+
+// Insert a new article
+db.articles.insertOne({
+  title: "Introduction to MongoDB",
+  content: "MongoDB is a popular NoSQL database that provides high performance, high availability, and easy scalability. It works on concept of collection and document.",
+  createdAt: new Date(),
+  author: "John Doe",
+  tags: ["database", "NoSQL", "MongoDB"],
+  wordCount: 150
+});
+
+// Verify the article was inserted
+const insertedArticle = db.articles.findOne({ title: "Introduction to MongoDB" });
+print("Inserted article:");
+printjson(insertedArticle);
+
+// Count the number of articles in the collection
+const articleCount = db.articles.countDocuments();
+print(`Total number of articles: ${articleCount}`);
+
+// List all collections in the database
+print("Collections in the 'dmbot' database:");
+db.getCollectionNames().forEach(printjson);
