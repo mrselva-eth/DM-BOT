@@ -1,35 +1,28 @@
-'use client'
+"use client"
 
-import React, { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
-import { 
-  mean, 
-  median, 
-  mode, 
-  standardDeviation, 
-  linearRegression, 
-  sampleCorrelation,
-  rSquared
-} from 'simple-statistics'
+import type * as React from "react"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { parse } from "csv-parse/sync"
+import { mean, median, mode, standardDeviation, linearRegression, sampleCorrelation, rSquared } from "simple-statistics"
 
 interface SentimentData {
-  _id: string;
-  messageId: string;
-  likes: number;
-  dislikes: number;
+  _id: string
+  messageId: string
+  likes: number
+  dislikes: number
 }
 
 interface MessageData {
-  _id: string;
-  id: string;
-  text: string;
-  isUser: boolean;
-  timestamp: string;
-  isEdited: boolean;
-  conversationId: string;
-  likes: number;
-  dislikes: number;
+  _id: string
+  id: string
+  text: string
+  isUser: string
+  timestamp: string
+  isEdited: string
+  conversationId: string
+  likes: number
+  dislikes: number
 }
 
 const Logo: React.FC = () => (
@@ -58,42 +51,42 @@ const Analysis: React.FC = () => {
       const reader = new FileReader()
       reader.onload = (e) => {
         try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer)
-          const workbook = XLSX.read(data, { type: 'array' })
-          const sheetName = workbook.SheetNames[0]
-          const worksheet = workbook.Sheets[sheetName]
-          const jsonData = XLSX.utils.sheet_to_json(worksheet)
-          
-          if (file.name.includes('sentiments')) {
-            setSentimentData(jsonData as SentimentData[])
+          const csvData = e.target?.result as string
+          const records = parse(csvData, {
+            columns: true,
+            skip_empty_lines: true,
+          })
+
+          if (file.name.includes("sentiments")) {
+            setSentimentData(records as SentimentData[])
             setSentimentFileName(file.name)
-          } else if (file.name.includes('messages')) {
-            setMessageData(jsonData as MessageData[])
+          } else if (file.name.includes("messages")) {
+            setMessageData(records as MessageData[])
             setMessageFileName(file.name)
           }
-          
+
           setError(null)
         } catch (err) {
-          setError('Error processing file. Please make sure it\'s a valid CSV.')
+          setError("Error processing file. Please make sure it's a valid CSV.")
         }
       }
-      reader.readAsArrayBuffer(file)
+      reader.readAsText(file)
     }
   }
 
   const handleAnalysis = () => {
     if (sentimentData.length === 0 || messageData.length === 0) {
-      setError('Please upload both CSV files before analyzing.')
+      setError("Please upload both CSV files before analyzing.")
       return
     }
 
-    const likesArray = sentimentData.map(item => item.likes)
-    const dislikesArray = sentimentData.map(item => item.dislikes)
-    const userMessages = messageData.filter(item => item.isUser)
-    const botMessages = messageData.filter(item => !item.isUser)
+    const likesArray = sentimentData.map((item) => Number(item.likes))
+    const dislikesArray = sentimentData.map((item) => Number(item.dislikes))
+    const userMessages = messageData.filter((item) => item.isUser === "true")
+    const botMessages = messageData.filter((item) => item.isUser === "false")
 
     const calculateStats = (arr: number[]) => {
-      if (arr.length === 0) return 'No data'
+      if (arr.length === 0) return "No data"
       return `
         Average: ${mean(arr).toFixed(2)}
         Median: ${median(arr)}
@@ -132,8 +125,8 @@ const Analysis: React.FC = () => {
       Bot messages: ${botMessages.length}
       
       Average message length (characters):
-      User: ${userMessages.length > 0 ? mean(userMessages.map(msg => msg.text.length)).toFixed(2) : 'No data'}
-      Bot: ${botMessages.length > 0 ? mean(botMessages.map(msg => msg.text.length)).toFixed(2) : 'No data'}
+      User: ${userMessages.length > 0 ? mean(userMessages.map((msg) => msg.text.length)).toFixed(2) : "No data"}
+      Bot: ${botMessages.length > 0 ? mean(botMessages.map((msg) => msg.text.length)).toFixed(2) : "No data"}
 
       Linear Regression (Likes vs Dislikes):
       ${calculateRegression(likesArray, dislikesArray)}
@@ -155,9 +148,7 @@ const Analysis: React.FC = () => {
       <div className="w-full max-w-4xl bg-white shadow-lg rounded-lg p-8">
         <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Upload Sentiment Data
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Sentiment Data</label>
             <input
               type="file"
               accept=".csv"
@@ -169,14 +160,10 @@ const Analysis: React.FC = () => {
                 file:bg-blue-50 file:text-blue-700
                 hover:file:bg-blue-100"
             />
-            {sentimentFileName && (
-              <p className="mt-2 text-sm text-gray-600">Uploaded: {sentimentFileName}</p>
-            )}
+            {sentimentFileName && <p className="mt-2 text-sm text-gray-600">Uploaded: {sentimentFileName}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Upload Message Data
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Message Data</label>
             <input
               type="file"
               accept=".csv"
@@ -188,9 +175,7 @@ const Analysis: React.FC = () => {
                 file:bg-blue-50 file:text-blue-700
                 hover:file:bg-blue-100"
             />
-            {messageFileName && (
-              <p className="mt-2 text-sm text-gray-600">Uploaded: {messageFileName}</p>
-            )}
+            {messageFileName && <p className="mt-2 text-sm text-gray-600">Uploaded: {messageFileName}</p>}
           </div>
         </div>
         <button
@@ -208,7 +193,7 @@ const Analysis: React.FC = () => {
         </div>
       )}
       <button
-        onClick={() => router.push('/')}
+        onClick={() => router.push("/")}
         className="mt-8 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300"
       >
         Back to Home
@@ -218,3 +203,4 @@ const Analysis: React.FC = () => {
 }
 
 export default Analysis
+

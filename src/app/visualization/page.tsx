@@ -1,9 +1,10 @@
-'use client'
+"use client"
 
-import React, { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
-import { Bar, Pie, Line } from 'react-chartjs-2'
+import type * as React from "react"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { parse } from "csv-parse/sync"
+import { Bar, Pie, Line } from "react-chartjs-2"
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -15,37 +16,27 @@ import {
   ArcElement,
   PointElement,
   LineElement,
-} from 'chart.js'
+} from "chart.js"
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement,
-  PointElement,
-  LineElement
-)
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, PointElement, LineElement)
 
 interface SentimentData {
-  _id: string;
-  messageId: string;
-  likes: number;
-  dislikes: number;
+  _id: string
+  messageId: string
+  likes: number
+  dislikes: number
 }
 
 interface MessageData {
-  _id: string;
-  id: string;
-  text: string;
-  isUser: boolean;
-  timestamp: string;
-  isEdited: boolean;
-  conversationId: string;
-  likes: number;
-  dislikes: number;
+  _id: string
+  id: string
+  text: string
+  isUser: string
+  timestamp: string
+  isEdited: string
+  conversationId: string
+  likes: number
+  dislikes: number
 }
 
 const Logo: React.FC = () => (
@@ -73,52 +64,52 @@ const DataVisualization: React.FC = () => {
       const reader = new FileReader()
       reader.onload = (e) => {
         try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer)
-          const workbook = XLSX.read(data, { type: 'array' })
-          const sheetName = workbook.SheetNames[0]
-          const worksheet = workbook.Sheets[sheetName]
-          const jsonData = XLSX.utils.sheet_to_json(worksheet)
-          
-          if (file.name.includes('sentiments')) {
-            setSentimentData(jsonData as SentimentData[])
+          const csvData = e.target?.result as string
+          const records = parse(csvData, {
+            columns: true,
+            skip_empty_lines: true,
+          })
+
+          if (file.name.includes("sentiments")) {
+            setSentimentData(records as SentimentData[])
             setSentimentFileName(file.name)
-          } else if (file.name.includes('messages')) {
-            setMessageData(jsonData as MessageData[])
+          } else if (file.name.includes("messages")) {
+            setMessageData(records as MessageData[])
             setMessageFileName(file.name)
           }
-          
+
           setError(null)
         } catch (err) {
-          setError('Error processing file. Please make sure it\'s a valid CSV.')
+          setError("Error processing file. Please make sure it's a valid CSV.")
         }
       }
-      reader.readAsArrayBuffer(file)
+      reader.readAsText(file)
     }
   }
 
   const sentimentChartData = {
-    labels: ['Likes', 'Dislikes'],
+    labels: ["Likes", "Dislikes"],
     datasets: [
       {
         data: [
-          sentimentData.reduce((sum, item) => sum + item.likes, 0),
-          sentimentData.reduce((sum, item) => sum + item.dislikes, 0),
+          sentimentData.reduce((sum, item) => sum + Number(item.likes), 0),
+          sentimentData.reduce((sum, item) => sum + Number(item.dislikes), 0),
         ],
-        backgroundColor: ['rgba(54, 162, 235, 0.6)', 'rgba(255, 99, 132, 0.6)'],
+        backgroundColor: ["rgba(54, 162, 235, 0.6)", "rgba(255, 99, 132, 0.6)"],
       },
     ],
   }
 
   const messageChartData = {
-    labels: ['Total Messages'],
+    labels: ["User Messages", "Bot Messages"],
     datasets: [
       {
-        label: 'Number of Messages',
+        label: "Number of Messages",
         data: [
-          messageData.filter(item => item.isUser).length,
-          messageData.filter(item => !item.isUser).length,
+          messageData.filter((item) => item.isUser === "true").length,
+          messageData.filter((item) => item.isUser === "false").length,
         ],
-        backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 159, 64, 0.6)'],
+        backgroundColor: ["rgba(75, 192, 192, 0.6)", "rgba(255, 159, 64, 0.6)"],
       },
     ],
   }
@@ -127,10 +118,10 @@ const DataVisualization: React.FC = () => {
     labels: messageData.map((_, index) => index + 1),
     datasets: [
       {
-        label: 'Message Length',
-        data: messageData.filter(item => item.isUser).map(item => item.text.length),
-        borderColor: 'rgba(75, 192, 192, 1)',
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        label: "Message Length",
+        data: messageData.filter((item) => item.isUser === "true").map((item) => item.text.length),
+        borderColor: "rgba(75, 192, 192, 1)",
+        backgroundColor: "rgba(75, 192, 192, 0.2)",
       },
     ],
   }
@@ -145,9 +136,7 @@ const DataVisualization: React.FC = () => {
       <div className="w-full max-w-4xl bg-white shadow-lg rounded-lg p-8">
         <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Upload Sentiment Data
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Sentiment Data</label>
             <input
               type="file"
               accept=".csv"
@@ -159,14 +148,10 @@ const DataVisualization: React.FC = () => {
                 file:bg-blue-50 file:text-blue-700
                 hover:file:bg-blue-100"
             />
-            {sentimentFileName && (
-              <p className="mt-2 text-sm text-gray-600">Uploaded: {sentimentFileName}</p>
-            )}
+            {sentimentFileName && <p className="mt-2 text-sm text-gray-600">Uploaded: {sentimentFileName}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Upload Message Data
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Message Data</label>
             <input
               type="file"
               accept=".csv"
@@ -178,9 +163,7 @@ const DataVisualization: React.FC = () => {
                 file:bg-blue-50 file:text-blue-700
                 hover:file:bg-blue-100"
             />
-            {messageFileName && (
-              <p className="mt-2 text-sm text-gray-600">Uploaded: {messageFileName}</p>
-            )}
+            {messageFileName && <p className="mt-2 text-sm text-gray-600">Uploaded: {messageFileName}</p>}
           </div>
         </div>
       </div>
@@ -206,7 +189,7 @@ const DataVisualization: React.FC = () => {
         )}
       </div>
       <button
-        onClick={() => router.push('/')}
+        onClick={() => router.push("/")}
         className="mt-8 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300"
       >
         Back to Home
@@ -216,3 +199,4 @@ const DataVisualization: React.FC = () => {
 }
 
 export default DataVisualization
+
