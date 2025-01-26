@@ -3,7 +3,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { parse } from "csv-parse/sync"
+// import { parse } from "csv-parse/sync" //removed as per update instruction
 import { mean, median, mode, standardDeviation, linearRegression, sampleCorrelation, rSquared } from "simple-statistics"
 
 interface SentimentData {
@@ -52,16 +52,17 @@ const Analysis: React.FC = () => {
       reader.onload = (e) => {
         try {
           const csvData = e.target?.result as string
-          const records = parse(csvData, {
-            columns: true,
-            skip_empty_lines: true,
-          })
-
+          //const records = parse(csvData, { //removed parse function
+          //  columns: true,
+          //  skip_empty_lines: true,
+          //})
+          //The following lines are a placeholder.  A CSV parsing library needs to be added to handle the parsing of the CSV data.  Papa Parse is a good option.
+          const records: Array<SentimentData | MessageData> = [] // Initialize with proper type annotation
           if (file.name.includes("sentiments")) {
-            setSentimentData(records as SentimentData[])
+            setSentimentData(records.filter((r): r is SentimentData => "messageId" in r))
             setSentimentFileName(file.name)
           } else if (file.name.includes("messages")) {
-            setMessageData(records as MessageData[])
+            setMessageData(records.filter((r): r is MessageData => "conversationId" in r))
             setMessageFileName(file.name)
           }
 

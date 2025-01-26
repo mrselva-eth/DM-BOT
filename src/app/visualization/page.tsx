@@ -3,7 +3,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { parse } from "csv-parse/sync"
+// import { parse } from "csv-parse/sync"
 import { Bar, Pie, Line } from "react-chartjs-2"
 import {
   Chart as ChartJS,
@@ -65,10 +65,23 @@ const DataVisualization: React.FC = () => {
       reader.onload = (e) => {
         try {
           const csvData = e.target?.result as string
-          const records = parse(csvData, {
-            columns: true,
-            skip_empty_lines: true,
-          })
+          // const records = parse(csvData, {
+          //   columns: true,
+          //   skip_empty_lines: true,
+          // })
+          //This section needs to be replaced with a proper CSV parsing library like Papa Parse.  The below is a placeholder.  Error handling is also needed.
+
+          const records: any[] = []
+          const lines = csvData.split("\n")
+          const headers = lines[0].split(",")
+          for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(",")
+            const record: any = {}
+            for (let j = 0; j < headers.length; j++) {
+              record[headers[j]] = values[j]
+            }
+            records.push(record)
+          }
 
           if (file.name.includes("sentiments")) {
             setSentimentData(records as SentimentData[])
@@ -81,6 +94,7 @@ const DataVisualization: React.FC = () => {
           setError(null)
         } catch (err) {
           setError("Error processing file. Please make sure it's a valid CSV.")
+          console.error("Error parsing CSV:", err)
         }
       }
       reader.readAsText(file)
