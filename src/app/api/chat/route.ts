@@ -8,6 +8,7 @@ import pinecone from "@/utils/pinecone"
 import type { ObjectId, WithId, Document } from "mongodb"
 import { getPineconeClient } from "@/utils/pinecone"
 import { RunnableSequence } from "@langchain/core/runnables"
+import { StringOutputParser } from "@langchain/core/output_parsers"
 
 // Interfaces
 interface Article {
@@ -106,9 +107,9 @@ const classifyQuery = async (message: string, history: string): Promise<string> 
     Classification (greeting/bot_info/developer_info/general_disaster_info/specific_disaster_info/other):
   `)
 
-  const classificationChain = RunnableSequence.from([classificationPrompt, model])
+  const classificationChain = RunnableSequence.from([classificationPrompt, model, new StringOutputParser()])
   const classification = await classificationChain.invoke({ query: message, history })
-  return getStringContent(classification.content).toLowerCase()
+  return classification.toLowerCase()
 }
 
 // Handler functions
