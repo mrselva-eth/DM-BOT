@@ -1,11 +1,18 @@
-import { Pinecone } from '@pinecone-database/pinecone';
+import type { Pinecone } from "@pinecone-database/pinecone"
+import { initializePineconeIndexes } from "./init-pinecone"
 
 if (!process.env.PINECONE_API_KEY) {
-  throw new Error('PINECONE_API_KEY is not set in the environment variables');
+  throw new Error("PINECONE_API_KEY is not set in the environment variables")
 }
 
-const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY,
-});
+let pineconeInstance: Pinecone | null = null
 
-export default pinecone;
+export async function getPineconeClient(): Promise<Pinecone> {
+  if (!pineconeInstance) {
+    pineconeInstance = await initializePineconeIndexes()
+  }
+  return pineconeInstance
+}
+
+export default getPineconeClient
+

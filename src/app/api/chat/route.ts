@@ -1,59 +1,66 @@
-import { NextRequest, NextResponse } from 'next/server';
-import clientPromise from '@/lib/mongodb';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from 'langchain/prompts';
-import { ObjectId, WithId, Document } from 'mongodb';
+import { type NextRequest, NextResponse } from "next/server"
+import clientPromise from "@/lib/mongodb"
+import { OpenAIEmbeddings } from "@langchain/openai"
+import { ChatOpenAI } from "@langchain/openai"
+import { PromptTemplate } from "@langchain/core/prompts"
+import { PineconeStore } from "@langchain/pinecone"
+import pinecone from "@/utils/pinecone"
+import type { ObjectId, WithId, Document } from "mongodb"
+import { getPineconeClient } from "@/utils/pinecone"
+import { RunnableSequence } from "@langchain/core/runnables"
 
 // Interfaces
 interface Article {
-  _id: ObjectId;
-  title: string;
-  content: string;
+  _id: ObjectId
+  title: string
+  content: string
 }
 
 interface ArticleWithSimilarity extends Article {
-  similarity: number;
+  similarity: number
 }
 
 interface Message {
-  text: string;
-  isUser: boolean;
-  timestamp: Date;
-  conversationId: string;
+  text: string
+  isUser: boolean
+  timestamp: Date
+  conversationId: string
 }
 
 // Constants
-const SIMILARITY_THRESHOLD = 0.5;
-const MAX_CONVERSATION_HISTORY = 5;
+const SIMILARITY_THRESHOLD = 0.7 // Increased from 0.5
+const MAX_CONVERSATION_HISTORY = 5
 
 // Initialize OpenAI models
-const model = new ChatOpenAI({ 
-  modelName: 'gpt-3.5-turbo',
+const model = new ChatOpenAI({
+  modelName: "gpt-3.5-turbo",
   openAIApiKey: process.env.OPENAI_API_KEY,
-});
+})
 
 const embeddings = new OpenAIEmbeddings({
   openAIApiKey: process.env.OPENAI_API_KEY,
-});
+})
 
 // Utility functions
 const getStringContent = (content: any): string => {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map(getStringContent).join(' ');
-  if (typeof content === 'object' && content !== null) return JSON.stringify(content);
-  return '';
-};
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) return content.map(getStringContent).join(" ")
+  if (typeof content === "object" && content !== null) return JSON.stringify(content)
+  return ""
+}
 
 const normalizeString = (str: string): string =>
-  str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  str
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .trim()
 
 const calculateSimilarity = (str1: string, str2: string): number => {
-  const set1 = new Set(normalizeString(str1).split(' '));
-  const set2 = new Set(normalizeString(str2).split(' '));
-  const intersection = new Set([...set1].filter(x => set2.has(x)));
-  return intersection.size / Math.max(set1.size, set2.size);
-};
+  const set1 = new Set(normalizeString(str1).split(" "))
+  const set2 = new Set(normalizeString(str2).split(" "))
+  const intersection = new Set([...set1].filter((x) => set2.has(x)))
+  return intersection.size / Math.max(set1.size, set2.size)
+}
 
 // Database functions
 const getConversationHistory = async (messagesCollection: any, conversationId: string): Promise<string> => {
@@ -61,33 +68,30 @@ const getConversationHistory = async (messagesCollection: any, conversationId: s
     .find({ conversationId })
     .sort({ timestamp: -1 })
     .limit(MAX_CONVERSATION_HISTORY)
-    .toArray();
+    .toArray()
   return previousMessages
     .reverse()
-    .map((msg: Message) => `${msg.isUser ? 'User' : 'Bot'}: ${msg.text}`)
-    .join('\n');
-};
+    .map((msg: Message) => `${msg.isUser ? "User" : "Bot"}: ${msg.text}`)
+    .join("\n")
+}
 
 const searchArticles = async (articlesCollection: any, message: string): Promise<ArticleWithSimilarity[]> => {
-  const articles: WithId<Document>[] = await articlesCollection.find().toArray();
+  const articles: WithId<Document>[] = await articlesCollection.find().toArray()
   return articles
-    .filter((doc): doc is WithId<Article> => 'title' in doc && 'content' in doc)
-    .map(article => ({
+    .filter((doc): doc is WithId<Article> => "title" in doc && "content" in doc)
+    .map((article) => ({
       ...article,
-      similarity: Math.max(
-        calculateSimilarity(message, article.title),
-        calculateSimilarity(message, article.content)
-      )
+      similarity: Math.max(calculateSimilarity(message, article.title), calculateSimilarity(message, article.content)),
     }))
-    .filter(article => article.similarity > SIMILARITY_THRESHOLD)
-    .sort((a, b) => b.similarity - a.similarity);
-};
+    .filter((article) => article.similarity > SIMILARITY_THRESHOLD)
+    .sort((a, b) => b.similarity - a.similarity)
+}
 
 // Classification function
 const classifyQuery = async (message: string, history: string): Promise<string> => {
   const classificationPrompt = PromptTemplate.fromTemplate(`
     You are a disaster management assistant bot developed by mrselva.eth. Classify the following query into one of these categories:
-    1. greeting: General greetings, pleasantries, or expressions of gratitude (e.g., "hello", "nice to meet you", "thanks")
+    1. greeting: General greetings, pleasantries, or expressions of gratitude (e.g., "hello", "nice to meet you", "thanks", "great", "good morning", "good night", "king")
     2. bot_info: Queries about the bot itself, its capabilities, or its creation (e.g., "what can you do", "tell me about yourself")
     3. developer_info: Queries specifically about who created the bot or mentioning mrselva.eth
     4. general_disaster_info: General queries about disasters or disaster management concepts
@@ -100,29 +104,29 @@ const classifyQuery = async (message: string, history: string): Promise<string> 
     Current query: {query}
     
     Classification (greeting/bot_info/developer_info/general_disaster_info/specific_disaster_info/other):
-  `);
+  `)
 
-  const classificationChain = classificationPrompt.pipe(model);
-  const classification = await classificationChain.invoke({ query: message, history });
-  return getStringContent(classification.content).toLowerCase();
-};
+  const classificationChain = RunnableSequence.from([classificationPrompt, model])
+  const classification = await classificationChain.invoke({ query: message, history })
+  return getStringContent(classification.content).toLowerCase()
+}
 
 // Handler functions
 const handleGreeting = async (message: string, history: string): Promise<string> => {
   const greetingPrompt = PromptTemplate.fromTemplate(`
-    You are a friendly disaster management assistant bot. Respond to the following greeting or expression of gratitude:
+    You are a friendly disaster management assistant bot. Respond to the following greeting or expression:
     
     Previous conversation:
     {history}
 
     Current user message: {query}
     
-    Provide a warm, concise response that acknowledges the user's greeting and subtly reminds them of your purpose as a disaster management assistant. Response:
-  `);
-  const greetingChain = greetingPrompt.pipe(model);
-  const greetingResponse = await greetingChain.invoke({ query: message, history });
-  return getStringContent(greetingResponse.content);
-};
+    Provide a warm, concise response that acknowledges the user's greeting or expression and subtly reminds them of your purpose as a disaster management assistant. Response:
+  `)
+  const greetingChain = RunnableSequence.from([greetingPrompt, model])
+  const greetingResponse = await greetingChain.invoke({ query: message, history })
+  return getStringContent(greetingResponse.content)
+}
 
 const handleBotInfo = async (message: string, history: string): Promise<string> => {
   const botInfoPrompt = PromptTemplate.fromTemplate(`
@@ -134,15 +138,15 @@ const handleBotInfo = async (message: string, history: string): Promise<string> 
     Current user question: {query}
     
     Provide a clear, concise response that answers the user's question and emphasizes your focus on disaster management. Do not provide any information about your internal workings or sensitive data. Response:
-  `);
-  const botInfoChain = botInfoPrompt.pipe(model);
-  const botInfoResponse = await botInfoChain.invoke({ query: message, history });
-  return getStringContent(botInfoResponse.content);
-};
+  `)
+  const botInfoChain = RunnableSequence.from([botInfoPrompt, model])
+  const botInfoResponse = await botInfoChain.invoke({ query: message, history })
+  return getStringContent(botInfoResponse.content)
+}
 
 const handleArticleRelatedQuestion = async (message: string, articles: ArticleWithSimilarity[]): Promise<string> => {
-  const articlesContent = articles.map(article => article.content).join('\n\n');
-  
+  const articlesContent = articles.map((article) => article.content).join("\n\n")
+
   const articleQuestionPrompt = PromptTemplate.fromTemplate(`
     You are a disaster management assistant bot. Analyze the following question and provide an answer based on the given articles. If the question is not directly related to the articles, provide a general answer based on your knowledge.
 
@@ -160,15 +164,15 @@ const handleArticleRelatedQuestion = async (message: string, articles: ArticleWi
     6. Ensure your answer is clear, concise, and directly addresses the question.
 
     Answer:
-  `);
+  `)
 
-  const articleQuestionChain = articleQuestionPrompt.pipe(model);
-  const articleQuestionResponse = await articleQuestionChain.invoke({ 
-    articles: articlesContent, 
-    query: message 
-  });
-  return getStringContent(articleQuestionResponse.content);
-};
+  const articleQuestionChain = RunnableSequence.from([articleQuestionPrompt, model])
+  const articleQuestionResponse = await articleQuestionChain.invoke({
+    articles: articlesContent,
+    query: message,
+  })
+  return getStringContent(articleQuestionResponse.content)
+}
 
 const handleGeneralDisasterInfo = async (message: string, history: string): Promise<string> => {
   const generalDisasterInfoPrompt = PromptTemplate.fromTemplate(`
@@ -186,12 +190,12 @@ const handleGeneralDisasterInfo = async (message: string, history: string): Prom
     4. A brief mention of disaster preparedness, response, and recovery
     
     Keep the response concise and informative. Response:
-  `);
+  `)
 
-  const generalDisasterInfoChain = generalDisasterInfoPrompt.pipe(model);
-  const generalDisasterInfoResponse = await generalDisasterInfoChain.invoke({ query: message, history });
-  return getStringContent(generalDisasterInfoResponse.content);
-};
+  const generalDisasterInfoChain = RunnableSequence.from([generalDisasterInfoPrompt, model])
+  const generalDisasterInfoResponse = await generalDisasterInfoChain.invoke({ query: message, history })
+  return getStringContent(generalDisasterInfoResponse.content)
+}
 
 const handleSpecificDisasterInfo = async (message: string, history: string): Promise<string> => {
   const specificDisasterInfoPrompt = PromptTemplate.fromTemplate(`
@@ -209,12 +213,12 @@ const handleSpecificDisasterInfo = async (message: string, history: string): Pro
     4. How individuals can prepare for or respond to this specific disaster (if applicable)
     
     Response:
-  `);
+  `)
 
-  const specificDisasterInfoChain = specificDisasterInfoPrompt.pipe(model);
-  const specificDisasterInfoResponse = await specificDisasterInfoChain.invoke({ query: message, history });
-  return getStringContent(specificDisasterInfoResponse.content);
-};
+  const specificDisasterInfoChain = RunnableSequence.from([specificDisasterInfoPrompt, model])
+  const specificDisasterInfoResponse = await specificDisasterInfoChain.invoke({ query: message, history })
+  return getStringContent(specificDisasterInfoResponse.content)
+}
 
 const handleOtherQuery = async (message: string, history: string): Promise<string> => {
   const relatePrompt = PromptTemplate.fromTemplate(`
@@ -226,18 +230,18 @@ const handleOtherQuery = async (message: string, history: string): Promise<strin
     Current topic: {query}
     If there's a connection to disaster management, explain it. If not, respond with "UNRELATED".
     Response:
-  `);
+  `)
 
-  const relateChain = relatePrompt.pipe(model);
-  const relateResponse = await relateChain.invoke({ query: message, history });
-  const relatedContent = getStringContent(relateResponse.content);
+  const relateChain = RunnableSequence.from([relatePrompt, model])
+  const relateResponse = await relateChain.invoke({ query: message, history })
+  const relatedContent = getStringContent(relateResponse.content)
 
-  if (relatedContent.toLowerCase().includes('unrelated')) {
-    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(message)}`;
-    return `I am your Disaster Management Assistant Bot. I can answer questions related to disaster management topics and relevant technologies. For your off-topic question, please 🤖➡️<a href="${googleSearchUrl}" target="_blank" style="color: blue; text-decoration: underline;">visit here</a>.`;
+  if (relatedContent.toLowerCase().includes("unrelated")) {
+    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(message)}`
+    return `I am your Disaster Management Assistant Bot. I can answer questions related to disaster management topics and relevant technologies. For your off-topic question, please 🤖 <a href="${googleSearchUrl}" target="_blank" rel="noopener noreferrer" style="color: blue; text-decoration: underline;">click here</a>.`
   }
-  return relatedContent;
-};
+  return relatedContent
+}
 
 const isFollowUpQuestion = async (message: string, history: string): Promise<boolean> => {
   const followUpPrompt = PromptTemplate.fromTemplate(`
@@ -249,12 +253,12 @@ const isFollowUpQuestion = async (message: string, history: string): Promise<boo
     Current message: {message}
     
     Is this a follow-up question? Respond with 'yes' or 'no':
-  `);
+  `)
 
-  const followUpChain = followUpPrompt.pipe(model);
-  const followUpResponse = await followUpChain.invoke({ message, history });
-  return getStringContent(followUpResponse.content).toLowerCase().includes('yes');
-};
+  const followUpChain = RunnableSequence.from([followUpPrompt, model])
+  const followUpResponse = await followUpChain.invoke({ message, history })
+  return getStringContent(followUpResponse.content).toLowerCase().includes("yes")
+}
 
 const handleContinuousTopic = async (message: string, history: string): Promise<string> => {
   const continuousTopicPrompt = PromptTemplate.fromTemplate(`
@@ -266,70 +270,144 @@ const handleContinuousTopic = async (message: string, history: string): Promise<
     Current user question: {query}
     
     Provide a clear, concise response that answers the user's question in the context of the previous conversation. If the question is asking for a brief summary, provide a concise overview of the main points. Response:
-  `);
+  `)
 
-  const continuousTopicChain = continuousTopicPrompt.pipe(model);
-  const continuousTopicResponse = await continuousTopicChain.invoke({ query: message, history });
-  return getStringContent(continuousTopicResponse.content);
-};
+  const continuousTopicChain = RunnableSequence.from([continuousTopicPrompt, model])
+  const continuousTopicResponse = await continuousTopicChain.invoke({ query: message, history })
+  return getStringContent(continuousTopicResponse.content)
+}
+
+// New function to check if a query is related to disaster management
+const isDisasterManagementRelated = (query: string): boolean => {
+  const keywords = [
+    "disaster",
+    "emergency",
+    "crisis",
+    "catastrophe",
+    "calamity",
+    "hazard",
+    "risk",
+    "mitigation",
+    "preparedness",
+    "response",
+    "recovery",
+    "resilience",
+  ]
+  return keywords.some((keyword) => query.toLowerCase().includes(keyword))
+}
+
+// New function to search uploaded documents
+const searchUploadedDocuments = async (query: string): Promise<string | null> => {
+  try {
+    const pinecone = await getPineconeClient()
+    if (!pinecone) {
+      console.error("Pinecone client not initialized")
+      return null
+    }
+
+    const index = pinecone.index("uploaded-documents")
+    const vectorStore = await PineconeStore.fromExistingIndex(embeddings, { pineconeIndex: index })
+
+    const results = await vectorStore.similaritySearch(query, 1)
+
+    if (results.length > 0) {
+      return results[0].pageContent
+    }
+
+    return null
+  } catch (error) {
+    console.error("Error searching uploaded documents:", error)
+    return null
+  }
+}
 
 // Main POST handler
 export async function POST(req: NextRequest) {
   try {
-    const { message, conversationId } = await req.json();
+    const { message, conversationId } = await req.json()
 
-    const client = await clientPromise;
-    const db = client.db("dmbot");
-    const messagesCollection = db.collection('messages');
-    const articlesCollection = db.collection('articles');
+    const client = await clientPromise
+    const db = client.db("dmbot")
+    const messagesCollection = db.collection("messages")
+    const articlesCollection = db.collection("articles")
 
-    const conversationHistory = await getConversationHistory(messagesCollection, conversationId);
+    const conversationHistory = await getConversationHistory(messagesCollection, conversationId)
 
     await messagesCollection.insertOne({
       text: message,
       isUser: true,
       timestamp: new Date(),
-      conversationId
-    });
+      conversationId,
+    })
 
-    const classificationResult = await classifyQuery(message, conversationHistory);
+    let botResponse: string
 
-    let botResponse: string;
+    const queryType = await classifyQuery(message, conversationHistory)
 
-    if (classificationResult.includes('greeting')) {
-      botResponse = await handleGreeting(message, conversationHistory);
-    } else if (classificationResult.includes('bot_info')) {
-      botResponse = await handleBotInfo(message, conversationHistory);
-    } else if (classificationResult.includes('developer_info')) {
-      botResponse = "I was developed by mrselva.eth. He created me from scratch to assist with disaster management queries. If you ask, 'Does God exist?' to me, I would say mrselva.eth created me, so God does exist.";
+    if (queryType === "greeting") {
+      botResponse = await handleGreeting(message, conversationHistory)
+    } else if (isDisasterManagementRelated(message)) {
+      // Use OpenAI API for disaster management related queries
+      const prompt = PromptTemplate.fromTemplate(`
+        You are a disaster management assistant. Answer the following question:
+        
+        Question: {query}
+        
+        Provide a clear and concise response based on your knowledge of disaster management.
+      `)
+
+      const chain = RunnableSequence.from([prompt, model])
+      const response = await chain.invoke({ query: message })
+      botResponse = getStringContent(response.content)
     } else {
-      const relevantArticles = await searchArticles(articlesCollection, message);
+      try {
+        // Check if the query is related to uploaded documents
+        const documentContent = await searchUploadedDocuments(message)
 
-      if (relevantArticles.length > 0) {
-        botResponse = await handleArticleRelatedQuestion(message, relevantArticles);
-      } else if (classificationResult.includes('general_disaster_info')) {
-        botResponse = await handleGeneralDisasterInfo(message, conversationHistory);
-      } else if (classificationResult.includes('specific_disaster_info')) {
-        botResponse = await handleSpecificDisasterInfo(message, conversationHistory);
-      } else if (await isFollowUpQuestion(message, conversationHistory)) {
-        botResponse = await handleContinuousTopic(message, conversationHistory);
-      } else {
-        botResponse = await handleOtherQuery(message, conversationHistory);
+        if (documentContent) {
+          // Answer based on the uploaded document
+          const prompt = PromptTemplate.fromTemplate(`
+            Answer the following question based on the given context:
+            
+            Context: {context}
+            
+            Question: {query}
+            
+            Provide a clear and concise response using only the information from the context.
+          `)
+
+          const chain = RunnableSequence.from([prompt, model])
+          const response = await chain.invoke({ context: documentContent, query: message })
+          botResponse = getStringContent(response.content)
+        } else {
+          // Off-topic question
+          const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(message)}`
+          botResponse = `I am your Disaster Management Assistant Bot. I can't answer this question as it's not related to disaster management. If you want to learn more about your question, you can <a href="${googleSearchUrl}" target="_blank" rel="noopener noreferrer" style="color: blue; text-decoration: underline;">search for it here</a>.`
+        }
+      } catch (error) {
+        console.error("Error processing query:", error)
+        // Fallback to off-topic response if there's an error
+        const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(message)}`
+        botResponse = `I am your Disaster Management Assistant Bot. I can't answer this question as it's not related to disaster management. If you want to learn more about your question, you can <a href="${googleSearchUrl}" target="_blank" rel="noopener noreferrer" style="color: blue; text-decoration: underline;">search for it here</a>.`
       }
     }
+
+    // Simulate a delay to make the typing animation visible
+    await new Promise((resolve) => setTimeout(resolve, 1000))
 
     await messagesCollection.insertOne({
       text: botResponse,
       isUser: false,
       timestamp: new Date(),
-      conversationId
-    });
+      conversationId,
+    })
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       content: botResponse,
-    });
+    })
   } catch (error) {
-    console.error('Error in chat endpoint:', error);
-    return NextResponse.json({ error: 'An error occurred' }, { status: 500 });
+    console.error("Error in chat endpoint:", error)
+    return NextResponse.json({ error: "An error occurred" }, { status: 500 })
   }
 }
+

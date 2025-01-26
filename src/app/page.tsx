@@ -168,7 +168,7 @@ export default function Home() {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
-  }, [chatRef])
+  }, []) // Removed chatRef from dependency array
 
   const toggleChat = () => {
     setIsChatOpen((prev) => !prev)
